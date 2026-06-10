@@ -125,7 +125,7 @@ class ProteinAnalyzer:
         with open(self.fasta_file) as f:
 
             for line in f:
-                line = line.strip()
+                line = line.strip().replace("\r", "")
                 if not line:
                     continue
 
@@ -183,6 +183,16 @@ class ProteinAnalyzer:
         l = len(seq)
         return ((seq.count("R") + seq.count("K")) / l) * 100 if l else 0
 
+    # =========================
+    # CACHED PEPTIDE FEATURES
+    # =========================
+
+    def _acidic_cache(self, seq):
+        return self.peptide_lengths(seq, RESIDUE_GROUPS["acidic"])
+
+    def _basic_cache(self, seq):
+        return self.peptide_lengths(seq, RESIDUE_GROUPS["basic"])
+
     @feature("acidic_clustering")
     def f_acid_cluster(self, seq, name):
         return self.clustering_distance(seq, RESIDUE_GROUPS["acidic"])
@@ -193,35 +203,35 @@ class ProteinAnalyzer:
 
     @feature("acidic_avg_peptide_length")
     def f_acid_avg(self, seq, name):
-        return self.peptide_lengths(seq, RESIDUE_GROUPS["acidic"])[0]
+        return self._acidic_cache(seq)[0]
 
     @feature("acidic_min_peptide_length")
     def f_acid_min(self, seq, name):
-        return self.peptide_lengths(seq, RESIDUE_GROUPS["acidic"])[1]
+        return self._acidic_cache(seq)[1]
 
     @feature("acidic_max_peptide_length")
     def f_acid_max(self, seq, name):
-        return self.peptide_lengths(seq, RESIDUE_GROUPS["acidic"])[2]
+        return self._acidic_cache(seq)[2]
 
     @feature("acidic_MS_fraction")
     def f_acid_ms(self, seq, name):
-        return self.peptide_lengths(seq, RESIDUE_GROUPS["acidic"])[3]
+        return self._acidic_cache(seq)[3]
 
     @feature("basic_avg_peptide_length")
     def f_basic_avg(self, seq, name):
-        return self.peptide_lengths(seq, RESIDUE_GROUPS["basic"])[0]
+        return self._basic_cache(seq)[0]
 
     @feature("basic_min_peptide_length")
     def f_basic_min(self, seq, name):
-        return self.peptide_lengths(seq, RESIDUE_GROUPS["basic"])[1]
+        return self._basic_cache(seq)[1]
 
     @feature("basic_max_peptide_length")
     def f_basic_max(self, seq, name):
-        return self.peptide_lengths(seq, RESIDUE_GROUPS["basic"])[2]
+        return self._basic_cache(seq)[2]
 
     @feature("basic_MS_fraction")
     def f_basic_ms(self, seq, name):
-        return self.peptide_lengths(seq, RESIDUE_GROUPS["basic"])[3]
+        return self._basic_cache(seq)[3]
 
     # =========================
     # RUN
