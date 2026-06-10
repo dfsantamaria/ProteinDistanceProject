@@ -1,6 +1,6 @@
 import csv
 import os
-
+from collections import Counter
 
 # =========================
 # BIO CONFIG
@@ -30,6 +30,10 @@ def feature(name):
     return wrapper
 
 
+def reset_features():
+    FEATURES.clear()
+
+
 # =========================
 # ANALYZER
 # =========================
@@ -40,11 +44,14 @@ class ProteinAnalyzer:
         self.fasta_file = fasta_file
         self.output_file = output_file
         self.sequences = {}
+        self._cache = {}   # FIX caching
+
 
     # ---------- UTILS ----------
     @staticmethod
     def format_value(value, digits):
         return round(value, digits) if value is not None else "NA"
+
 
     # ---------- CORE METHODS ----------
     def clustering_distance(self, sequence, residues):
@@ -75,6 +82,7 @@ class ProteinAnalyzer:
             values.append(min(candidates))
 
         return sum(values) / len(values)
+
 
     def peptide_lengths(self, sequence, residues):
         residues = set(residues)
@@ -109,6 +117,7 @@ class ProteinAnalyzer:
         frac = len(ms) / len(lengths)
 
         return avg, mn, mx, frac
+
 
     # ---------- FASTA ----------
     def read_fasta(self):
@@ -145,6 +154,29 @@ class ProteinAnalyzer:
 
         self.sequences = data
 
+
+    # =========================
+    # CACHE HELPERS
+    # =========================
+
+    def _acidic_cache(self, seq):
+        key = ("acidic", seq)
+        if key not in self._cache:
+            self._cache[key] = self.peptide_lengths(
+                seq, RESIDUE_GROUPS["acidic"]
+            )
+        return self._cache[key]
+
+
+    def _basic_cache(self, seq):
+        key = ("basic", seq)
+        if key not in self._cache:
+            self._cache[key] = self.peptide_lengths(
+                seq, RESIDUE_GROUPS["basic"]
+            )
+        return self._cache[key]
+
+
     # =========================
     # FEATURE DEFINITIONS
     # =========================
@@ -153,85 +185,101 @@ class ProteinAnalyzer:
     def f_name(self, seq, name):
         return name
 
+
     @feature("Length")
     def f_length(self, seq, name):
         return len(seq)
 
+
     @feature("D_count")
-    def f_d(self, seq, name):
-        return seq.count("D")
+    def f_d(self, seq, name, aa):
+        return aa.get("D", 0)
+
 
     @feature("E_count")
-    def f_e(self, seq, name):
-        return seq.count("E")
+    def f_e(self, seq, name, aa):
+        return aa.get("E", 0)
+
 
     @feature("%DE")
-    def f_de(self, seq, name):
+    def f_de(self, seq, name, aa):
         l = len(seq)
-        return ((seq.count("D") + seq.count("E")) / l) * 100 if l else 0
+        if l == 0:
+            return None
+        return ((aa.get("D", 0) + aa.get("E", 0)) / l) * 100
+
 
     @feature("R_count")
-    def f_r(self, seq, name):
-        return seq.count("R")
+    def f_r(self, seq, name, aa):
+        return aa.get("R", 0)
+
 
     @feature("K_count")
-    def f_k(self, seq, name):
-        return seq.count("K")
+    def f_k(self, seq, name, aa):
+        return aa.get("K", 0)
+
 
     @feature("%RK")
-    def f_rk(self, seq, name):
+    def f_rk(self, seq, name, aa):
         l = len(seq)
-        return ((seq.count("R") + seq.count("K")) / l) * 100 if l else 0
+        if l == 0:
+            return None
+        return ((aa.get("R", 0) + aa.get("K", 0)) / l) * 100
+
 
     # =========================
     # CACHED PEPTIDE FEATURES
     # =========================
 
-    def _acidic_cache(self, seq):
-        return self.peptide_lengths(seq, RESIDUE_GROUPS["acidic"])
-
-    def _basic_cache(self, seq):
-        return self.peptide_lengths(seq, RESIDUE_GROUPS["basic"])
-
     @feature("acidic_clustering")
     def f_acid_cluster(self, seq, name):
         return self.clustering_distance(seq, RESIDUE_GROUPS["acidic"])
+
 
     @feature("basic_clustering")
     def f_basic_cluster(self, seq, name):
         return self.clustering_distance(seq, RESIDUE_GROUPS["basic"])
 
+
     @feature("acidic_avg_peptide_length")
     def f_acid_avg(self, seq, name):
         return self._acidic_cache(seq)[0]
+
 
     @feature("acidic_min_peptide_length")
     def f_acid_min(self, seq, name):
         return self._acidic_cache(seq)[1]
 
+
     @feature("acidic_max_peptide_length")
     def f_acid_max(self, seq, name):
         return self._acidic_cache(seq)[2]
+
 
     @feature("acidic_MS_fraction")
     def f_acid_ms(self, seq, name):
         return self._acidic_cache(seq)[3]
 
+
     @feature("basic_avg_peptide_length")
     def f_basic_avg(self, seq, name):
         return self._basic_cache(seq)[0]
+
 
     @feature("basic_min_peptide_length")
     def f_basic_min(self, seq, name):
         return self._basic_cache(seq)[1]
 
+
     @feature("basic_max_peptide_length")
     def f_basic_max(self, seq, name):
         return self._basic_cache(seq)[2]
 
+
     @feature("basic_MS_fraction")
     def f_basic_ms(self, seq, name):
         return self._basic_cache(seq)[3]
+
 
     # =========================
     # RUN
@@ -250,8 +298,11 @@ class ProteinAnalyzer:
 
             for name, seq in self.sequences.items():
 
+                aa = Counter(seq)   # OPTIMIZATION FIX
+
                 row = [
-                    func(self, seq, name)
+                    func(self, seq, name, aa) if "aa" in func.__code__.co_varnames
+                    else func(self, seq, name)
                     for _, func in FEATURES
                 ]
 
@@ -263,6 +314,8 @@ class ProteinAnalyzer:
 # =========================
 
 def main():
+    reset_features()
+
     analyzer = ProteinAnalyzer(
         "proteins.fasta",
         "global_results.csv"
