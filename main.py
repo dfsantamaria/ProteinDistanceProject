@@ -42,16 +42,10 @@ def digest_trypsin(sequence: str) -> list:
 
     for i in range(len(sequence) - 1):
         if sequence[i] in {"K", "R"} and sequence[i + 1] != "P":
-            peptides.append(
-                (start, i + 1, sequence[start:i + 1])
-            )
+            peptides.append((start, i + 1, sequence[start:i + 1]))
             start = i + 1
-
     if start < len(sequence):
-        peptides.append(
-            (start, len(sequence), sequence[start:])
-        )
-
+        peptides.append((start, len(sequence), sequence[start:]))
     return peptides
 
 
@@ -67,16 +61,11 @@ def digest_gluc(sequence: str) -> list:
 
     for i, aa in enumerate(sequence):
         if aa in {"D", "E"}:
-            peptides.append(
-                (start, i + 1, sequence[start:i + 1])
-            )
+            peptides.append((start, i + 1, sequence[start:i + 1]))
             start = i + 1
 
     if start < len(sequence):
-        peptides.append(
-            (start, len(sequence), sequence[start:])
-        )
-
+        peptides.append((start, len(sequence), sequence[start:]))
     return peptides
 
 
@@ -87,7 +76,6 @@ def digest_gluc(sequence: str) -> list:
 def apply_missed_cleavages(peptides: list, mc: int) -> list:
     if mc < 0:
         raise ValueError("Missed cleavages must be >= 0.")
-
     result = []
     n = len(peptides)
 
@@ -97,23 +85,16 @@ def apply_missed_cleavages(peptides: list, mc: int) -> list:
         current_seq = peptides[i][2]
 
         # Peptide with zero missed cleavages
-        result.append(
-            (start, current_end, current_seq)
-        )
+        result.append((start, current_end, current_seq))
 
         # Merge adjacent peptides
         for j in range(1, mc + 1):
             if i + j >= n:
                 break
-
             next_peptide = peptides[i + j]
             current_seq += next_peptide[2]
             current_end = next_peptide[1]
-
-            result.append(
-                (start, current_end, current_seq)
-            )
-
+            result.append((start, current_end, current_seq))
     return result
 
 
@@ -122,12 +103,7 @@ def apply_missed_cleavages(peptides: list, mc: int) -> list:
 # Only peptides within the configured length range count
 # ==========================================================
 
-def calculate_coverage(
-    sequence_length: int,
-    peptides: list,
-    min_length: int = MIN_PEPTIDE_LENGTH,
-    max_length: int = MAX_PEPTIDE_LENGTH,
-) -> Optional[float]:
+def calculate_coverage(sequence_length: int, peptides: list, min_length: int = MIN_PEPTIDE_LENGTH, max_length: int = MAX_PEPTIDE_LENGTH,) -> Optional[float]:
 
     if sequence_length == 0:
         return None
@@ -140,10 +116,7 @@ def calculate_coverage(
         if min_length <= peptide_length <= max_length:
             covered.update(range(start, end))
 
-    return round(
-        100 * len(covered) / sequence_length,
-        2
-    )
+    return round( 100 * len(covered) / sequence_length, 2 )
 
 
 # ==========================================================
@@ -151,10 +124,7 @@ def calculate_coverage(
 # ==========================================================
 
 def _peptides(seq: str, residues: set) -> tuple:
-    cuts = [
-        i for i, aa in enumerate(seq)
-        if aa in residues
-    ]
+    cuts = [i for i, aa in enumerate(seq)  if aa in residues  ]
 
     prev = 0
     lengths = []
