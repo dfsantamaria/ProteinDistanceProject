@@ -1,4 +1,3 @@
-
 import csv
 from collections import Counter
 from functools import lru_cache
@@ -18,7 +17,7 @@ MAX_PEPTIDE_LENGTH = 25
 
 # Digestion coverage peptide-length limits
 MIN_COVERAGE_LENGTH = 7
-MAX_COVERAGE_LENGTH = 50
+MAX_COVERAGE_LENGTH = 25
 
 
 @dataclass
@@ -104,7 +103,7 @@ class ProteinAnalyzer:
         Split a sequence after each residue in the specified group.
 
         Return average length, minimum length, maximum length, and
-        fraction of resulting peptides within the original 7–25
+        fraction of resulting peptides within the original MIN_PEPTIDE_LENGTH and MAX_PEPTIDE_LENGTH
         amino-acid length range.
         """
         peptide_lengths = []
@@ -326,7 +325,6 @@ class ProteinAnalyzer:
         self.read_fasta()
 
         header = [
-            # Original output columns
             "Protein",
             "Length",
             "D_count",
@@ -345,8 +343,7 @@ class ProteinAnalyzer:
             "basic_min",
             "basic_max",
             "basic_fraction",
-
-            # Added digestion coverage columns
+            #digestion coverage columns
             "Trypsin_0MC_%",
             "Trypsin_1MC_%",
             "Trypsin_2MC_%",
@@ -410,14 +407,11 @@ class ProteinAnalyzer:
                     gluc["GluC_2MC_%"],
                 ])
 
-                print(f"Processed {name}")
+                #print(f"Processed {name}")
 
-        print(f"Results written to: {self.output_file}")
+        #print(f"Results written to: {self.output_file}")
 
 
 if __name__ == "__main__":
-    analyzer = ProteinAnalyzer(
-        fasta_file="proteins.fasta",
-        output_file="global_results.csv",
-    )
+    analyzer = ProteinAnalyzer(fasta_file="proteins.fasta", output_file="global_results.csv")
     analyzer.run()
