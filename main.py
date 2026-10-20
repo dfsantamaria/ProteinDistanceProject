@@ -1,27 +1,27 @@
+
 import csv
-import os
 from collections import Counter
 from functools import lru_cache
 from dataclasses import dataclass
-from typing import Dict, Optional
+from typing import Dict, Optional, List, Tuple
 
 
-# ==========================================================
-# CONFIGURATION
-# ==========================================================
+# Amino acid groups
+RESIDUE_GROUPS = {
+    "acidic": {"D", "E"},
+    "basic": {"R", "K"},
+}
 
-RESIDUE_GROUPS = {"acidic": {"D", "E"}, "basic": {"R", "K"},}
-
+# Original peptide statistics
 MIN_PEPTIDE_LENGTH = 7
 MAX_PEPTIDE_LENGTH = 25
-MAX_MISSED_CLEAVAGES = 2
+
+# Digestion coverage peptide-length limits
+MIN_COVERAGE_LENGTH = 7
+MAX_COVERAGE_LENGTH = 50
 
 
-# ==========================================================
-# SEQUENCE STATISTICS
-# ==========================================================
-
-@dataclass(frozen=True)
+@dataclass
 class SeqStats:
     counts: Counter
     acidic_nnd: Optional[float]
@@ -30,165 +30,19 @@ class SeqStats:
     basic: tuple
 
 
-# ==========================================================
-# TRYPSIN DIGEST
-# Cleaves after K or R, except before P
-# Coordinates: zero-based, end-exclusive
-# ==========================================================
-
-def digest_trypsin(sequence: str) -> list:
-    peptides = []
-    start = 0
-
-    for i in range(len(sequence) - 1):
-        if sequence[i] in {"K", "R"} and sequence[i + 1] != "P":
-            peptides.append((start, i + 1, sequence[start:i + 1]))
-            start = i + 1
-    if start < len(sequence):
-        peptides.append((start, len(sequence), sequence[start:]))
-    return peptides
-
-
-# ==========================================================
-# GLU-C DIGEST
-# Cleaves after D or E, following the supplied rule
-# Coordinates: zero-based, end-exclusive
-# ==========================================================
-
-def digest_gluc(sequence: str) -> list:
-    peptides = []
-    start = 0
-
-    for i, aa in enumerate(sequence):
-        if aa in {"D", "E"}:
-            peptides.append((start, i + 1, sequence[start:i + 1]))
-            start = i + 1
-
-    if start < len(sequence):
-        peptides.append((start, len(sequence), sequence[start:]))
-    return peptides
-
-
-# ==========================================================
-# GENERATE MISSED CLEAVAGES
-# ==========================================================
-
-def apply_missed_cleavages(peptides: list, mc: int) -> list:
-    if mc < 0:
-        raise ValueError("Missed cleavages must be >= 0.")
-    result = []
-    n = len(peptides)
-
-    for i in range(n):
-        start = peptides[i][0]
-        current_end = peptides[i][1]
-        current_seq = peptides[i][2]
-
-        # Peptide with zero missed cleavages
-        result.append((start, current_end, current_seq))
-
-        # Merge adjacent peptides
-        for j in range(1, mc + 1):
-            if i + j >= n:
-                break
-            next_peptide = peptides[i + j]
-            current_seq += next_peptide[2]
-            current_end = next_peptide[1]
-            result.append((start, current_end, current_seq))
-    return result
-
-
-# ==========================================================
-# CALCULATE PEPTIDE COVERAGE
-# Only peptides within the configured length range count
-# ==========================================================
-
-def calculate_coverage(sequence_length: int, peptides: list, min_length: int = MIN_PEPTIDE_LENGTH, max_length: int = MAX_PEPTIDE_LENGTH,) -> Optional[float]:
-
-    if sequence_length == 0:
-        return None
-
-    covered = set()
-
-    for start, end, peptide in peptides:
-        peptide_length = len(peptide)
-
-        if min_length <= peptide_length <= max_length:
-            covered.update(range(start, end))
-
-    return round( 100 * len(covered) / sequence_length, 2 )
-
-
-# ==========================================================
-# CALCULATE ORIGINAL PEPTIDE STATISTICS
-# ==========================================================
-
-def _peptides(seq: str, residues: set) -> tuple:
-    cuts = [i for i, aa in enumerate(seq)  if aa in residues  ]
-
-    prev = 0
-    lengths = []
-
-    for c in cuts:
-        lengths.append(c + 1 - prev)
-        prev = c + 1
-
-    if prev < len(seq):
-        lengths.append(len(seq) - prev)
-
-    if not lengths:
-        return (None, None, None, None)
-
-    avg = sum(lengths) / len(lengths)
-    minimum = min(lengths)
-    maximum = max(lengths)
-
-    fraction = sum(
-        MIN_PEPTIDE_LENGTH <= length <= MAX_PEPTIDE_LENGTH
-        for length in lengths
-    ) / len(lengths)
-
-    return avg, minimum, maximum, fraction
-
-
-# ==========================================================
-# PROTEIN ANALYZER
-# ==========================================================
-
 class ProteinAnalyzer:
-
-    def __init__(
-        self,
-        fasta_file: str,
-        output_file: str,
-        max_missed_cleavages: int = MAX_MISSED_CLEAVAGES,
-    ):
-        if max_missed_cleavages < 0:
-            raise ValueError(
-                "max_missed_cleavages must be >= 0."
-            )
-
+    def __init__(self, fasta_file: str, output_file: str):
         self.fasta_file = fasta_file
         self.output_file = output_file
-        self.max_missed_cleavages = max_missed_cleavages
         self.sequences: Dict[str, str] = {}
 
-    # ======================================================
-    # READ FASTA FILE
-    # ======================================================
-
     def read_fasta(self):
-        if not os.path.exists(self.fasta_file):
-            raise FileNotFoundError(self.fasta_file)
+        """Read protein sequences from a local FASTA file."""
+        self.sequences = {}
+        current_name = None
+        current_sequence = []
 
-        name = None
-        seq = []
-
-        with open(
-            self.fasta_file,
-            encoding="utf-8"
-        ) as f:
-
+        with open(self.fasta_file, "r", encoding="utf-8") as f:
             for line in f:
                 line = line.strip()
 
@@ -196,93 +50,283 @@ class ProteinAnalyzer:
                     continue
 
                 if line.startswith(">"):
-                    if name is not None:
-                        self.sequences[name] = "".join(seq).upper()
+                    if current_name is not None:
+                        self.sequences[current_name] = "".join(
+                            current_sequence
+                        ).upper()
 
-                    name = line[1:].strip()
-                    seq = []
-
+                    current_name = line[1:].strip()
+                    current_sequence = []
                 else:
-                    if name is None:
+                    if current_name is None:
                         raise ValueError(
-                            "FASTA sequence data found before a header."
+                            "The FASTA file must start with a header line "
+                            "beginning with '>'."
                         )
 
-                    seq.append(line)
+                    current_sequence.append(line)
 
-            if name is not None:
-                self.sequences[name] = "".join(seq).upper()
+        # Save the final sequence
+        if current_name is not None:
+            self.sequences[current_name] = "".join(
+                current_sequence
+            ).upper()
 
-    # ======================================================
-    # NEAREST-NEIGHBOR DISTANCE
-    # ======================================================
+        if not self.sequences:
+            raise ValueError(
+                f"No protein sequences were found in {self.fasta_file}"
+            )
 
     @staticmethod
     def _nnd(seq: str, residues: set) -> Optional[float]:
-
+        """
+        Calculate the mean distance between consecutive occurrences
+        of residues in the specified group.
+        """
         positions = [
-            i + 1
-            for i, aa in enumerate(seq)
+            i for i, aa in enumerate(seq)
             if aa in residues
         ]
 
         if len(positions) < 2:
             return None
 
-        distances = []
-
-        for i, position in enumerate(positions):
-            neighbors = []
-
-            if i > 0:
-                neighbors.append(
-                    position - positions[i - 1] - 1
-                )
-
-            if i < len(positions) - 1:
-                neighbors.append(
-                    positions[i + 1] - position - 1
-                )
-
-            distances.append(min(neighbors))
+        distances = [
+            positions[i + 1] - positions[i]
+            for i in range(len(positions) - 1)
+        ]
 
         return sum(distances) / len(distances)
 
-    # ======================================================
-    # CACHE SEQUENCE STATISTICS
-    # ======================================================
+    @staticmethod
+    def _peptides(seq: str, residues: set) -> tuple:
+        """
+        Split a sequence after each residue in the specified group.
 
-    @lru_cache(maxsize=None)
+        Return average length, minimum length, maximum length, and
+        fraction of resulting peptides within the original 7–25
+        amino-acid length range.
+        """
+        peptide_lengths = []
+        start = 0
+
+        for i, aa in enumerate(seq):
+            if aa in residues:
+                peptide_lengths.append(i + 1 - start)
+                start = i + 1
+
+        # Include any remaining sequence after the last cleavage
+        if start < len(seq):
+            peptide_lengths.append(len(seq) - start)
+
+        valid_lengths = [
+            length for length in peptide_lengths
+            if MIN_PEPTIDE_LENGTH <= length <= MAX_PEPTIDE_LENGTH
+        ]
+
+        if not peptide_lengths or not valid_lengths:
+            return None, None, None, 0.0
+
+        average = sum(valid_lengths) / len(valid_lengths)
+        minimum = min(valid_lengths)
+        maximum = max(valid_lengths)
+        fraction = len(valid_lengths) / len(peptide_lengths)
+
+        return average, minimum, maximum, fraction
+
+    @lru_cache(maxsize=100_000)
     def _stats(self, seq: str) -> SeqStats:
-        return SeqStats(
-            counts=Counter(seq),
+        """Calculate the original sequence statistics."""
+        counts = Counter(seq)
 
-            acidic_nnd=self._nnd(
-                seq, RESIDUE_GROUPS["acidic"]
-            ),
-
-            basic_nnd=self._nnd(
-                seq, RESIDUE_GROUPS["basic"]
-            ),
-
-            acidic=_peptides(
-                seq, RESIDUE_GROUPS["acidic"]
-            ),
-
-            basic=_peptides(
-                seq, RESIDUE_GROUPS["basic"]
-            ),
+        acidic_nnd = self._nnd(
+            seq, RESIDUE_GROUPS["acidic"]
+        )
+        basic_nnd = self._nnd(
+            seq, RESIDUE_GROUPS["basic"]
         )
 
-    # ======================================================
-    # RUN ANALYSIS AND WRITE CSV
-    # ======================================================
+        acidic = self._peptides(
+            seq, RESIDUE_GROUPS["acidic"]
+        )
+        basic = self._peptides(
+            seq, RESIDUE_GROUPS["basic"]
+        )
+
+        return SeqStats(
+            counts=counts,
+            acidic_nnd=acidic_nnd,
+            basic_nnd=basic_nnd,
+            acidic=acidic,
+            basic=basic,
+        )
+
+    @staticmethod
+    def _digest_trypsin(seq: str) -> List[Tuple[int, int, str]]:
+        """
+        Digest with Trypsin.
+
+        Cleaves after K or R unless the next amino acid is P.
+
+        Each fragment is represented as:
+            (start_index, end_index, peptide_sequence)
+
+        Indices are zero-based, with end_index exclusive.
+        """
+        fragments = []
+        start = 0
+
+        for i, aa in enumerate(seq):
+            if aa in {"K", "R"}:
+                next_is_proline = (
+                    i + 1 < len(seq) and seq[i + 1] == "P"
+                )
+
+                if not next_is_proline:
+                    end = i + 1
+                    fragments.append((start, end, seq[start:end]))
+                    start = end
+
+        if start < len(seq):
+            fragments.append((start, len(seq), seq[start:]))
+
+        return fragments
+
+    @staticmethod
+    def _digest_gluc(seq: str) -> List[Tuple[int, int, str]]:
+        """
+        Digest with Glu-C using the requested cleavage rule:
+        cleaves after D or E.
+        """
+        fragments = []
+        start = 0
+
+        for i, aa in enumerate(seq):
+            if aa in {"D", "E"}:
+                end = i + 1
+                fragments.append((start, end, seq[start:end]))
+                start = end
+
+        if start < len(seq):
+            fragments.append((start, len(seq), seq[start:]))
+
+        return fragments
+
+    @staticmethod
+    def _apply_missed_cleavages(
+        fragments: List[Tuple[int, int, str]],
+        missed_cleavages: int,
+    ) -> List[Tuple[int, int, str]]:
+        """
+        Generate peptides allowing the specified number of missed
+        cleavages.
+
+        0 missed cleavages: individual fragments
+        1 missed cleavage: combine up to 2 adjacent fragments
+        2 missed cleavages: combine up to 3 adjacent fragments
+        """
+        if missed_cleavages < 0:
+            raise ValueError(
+                "missed_cleavages must be zero or greater."
+            )
+
+        peptides = []
+        max_fragments = missed_cleavages + 1
+
+        for i in range(len(fragments)):
+            combined_sequence = ""
+
+            for j in range(i, min(i + max_fragments, len(fragments))):
+                combined_sequence += fragments[j][2]
+
+                peptides.append(
+                    (
+                        fragments[i][0],
+                        fragments[j][1],
+                        combined_sequence,
+                    )
+                )
+
+        return peptides
+
+    @staticmethod
+    def _calculate_coverage(
+        peptides: List[Tuple[int, int, str]],
+        sequence_length: int,
+    ) -> float:
+        """
+        Calculate percentage of sequence positions covered by at least
+        one peptide whose length is between 7 and 50 amino acids.
+        """
+        if sequence_length == 0:
+            return 0.0
+
+        covered = bytearray(sequence_length)
+
+        for start, end, peptide in peptides:
+            peptide_length = len(peptide)
+
+            if (
+                MIN_COVERAGE_LENGTH
+                <= peptide_length
+                <= MAX_COVERAGE_LENGTH
+            ):
+                for position in range(start, end):
+                    covered[position] = 1
+
+        covered_residues = sum(covered)
+
+        return round(
+            covered_residues / sequence_length * 100,
+            2,
+        )
+
+    def _digest_coverage(
+        self,
+        seq: str,
+        enzyme: str,
+    ) -> Dict[str, float]:
+        """Calculate coverage for 0, 1, and 2 missed cleavages."""
+        enzyme_name = enzyme.strip().lower()
+
+        if enzyme_name == "trypsin":
+            fragments = self._digest_trypsin(seq)
+            output_prefix = "Trypsin"
+        elif enzyme_name in {"gluc", "glu-c", "gluc"}:
+            fragments = self._digest_gluc(seq)
+            output_prefix = "GluC"
+        else:
+            raise ValueError(
+                f"Unsupported enzyme: {enzyme}. "
+                "Use 'Trypsin' or 'GluC'."
+            )
+
+        results = {}
+
+        for missed_cleavages in range(3):
+            peptides = self._apply_missed_cleavages(
+                fragments,
+                missed_cleavages,
+            )
+
+            coverage = self._calculate_coverage(
+                peptides,
+                len(seq),
+            )
+
+            column_name = (
+                f"{output_prefix}_{missed_cleavages}MC_%"
+            )
+            results[column_name] = coverage
+
+        return results
 
     def run(self):
+        """Analyze all FASTA sequences and write one combined CSV."""
         self.read_fasta()
 
         header = [
-            # Original columns
+            # Original output columns
             "Protein",
             "Length",
             "D_count",
@@ -302,111 +346,78 @@ class ProteinAnalyzer:
             "basic_max",
             "basic_fraction",
 
-            # New digestion and coverage columns
-            "trypsin_peptide_count",
-            "trypsin_coverage_0mc",
-            "trypsin_coverage_max_mc",
-            "gluc_peptide_count",
-            "gluc_coverage_0mc",
-            "gluc_coverage_max_mc",
+            # Added digestion coverage columns
+            "Trypsin_0MC_%",
+            "Trypsin_1MC_%",
+            "Trypsin_2MC_%",
+            "GluC_0MC_%",
+            "GluC_1MC_%",
+            "GluC_2MC_%",
         ]
 
         with open(
             self.output_file,
             "w",
             newline="",
-            encoding="utf-8"
+            encoding="utf-8",
         ) as f:
-
             writer = csv.writer(f)
             writer.writerow(header)
 
             for name, seq in self.sequences.items():
-
                 stats = self._stats(seq)
-                counts = stats.counts
-                length = len(seq)
+                sequence_length = len(seq)
 
-                # Original residue counts
-                D = counts["D"]
-                E = counts["E"]
-                R = counts["R"]
-                K = counts["K"]
+                D = stats.counts["D"]
+                E = stats.counts["E"]
+                R = stats.counts["R"]
+                K = stats.counts["K"]
 
-                percent_DE = (
-                    (D + E) / length * 100
-                    if length else None
+                acidic_percentage = (
+                    (D + E) / sequence_length * 100
+                    if sequence_length else None
+                )
+                basic_percentage = (
+                    (R + K) / sequence_length * 100
+                    if sequence_length else None
                 )
 
-                percent_RK = (
-                    (R + K) / length * 100
-                    if length else None
+                trypsin = self._digest_coverage(
+                    seq, "Trypsin"
+                )
+                gluc = self._digest_coverage(
+                    seq, "GluC"
                 )
 
-                # Digest with zero missed cleavages
-                trypsin_base = digest_trypsin(seq)
-                gluc_base = digest_gluc(seq)
-
-                # Generate peptides with missed cleavages
-                trypsin_max = apply_missed_cleavages(
-                    trypsin_base,
-                    self.max_missed_cleavages
-                )
-
-                gluc_max = apply_missed_cleavages(
-                    gluc_base,
-                    self.max_missed_cleavages
-                )
-
-                # Calculate coverage
-                trypsin_coverage_0mc = calculate_coverage(
-                    length, trypsin_base
-                )
-
-                trypsin_coverage_max_mc = calculate_coverage(
-                    length, trypsin_max
-                )
-
-                gluc_coverage_0mc = calculate_coverage(
-                    length, gluc_base
-                )
-
-                gluc_coverage_max_mc = calculate_coverage(
-                    length, gluc_max
-                )
-
-                # Write original and new CSV fields
                 writer.writerow([
                     name,
-                    length,
+                    sequence_length,
                     D,
                     E,
-                    percent_DE,
+                    acidic_percentage,
                     R,
                     K,
-                    percent_RK,
-
+                    basic_percentage,
                     stats.acidic_nnd,
                     stats.basic_nnd,
-
                     *stats.acidic,
                     *stats.basic,
-
-                    len(trypsin_base),
-                    trypsin_coverage_0mc,
-                    trypsin_coverage_max_mc,
-
-                    len(gluc_base),
-                    gluc_coverage_0mc,
-                    gluc_coverage_max_mc,
+                    trypsin["Trypsin_0MC_%"],
+                    trypsin["Trypsin_1MC_%"],
+                    trypsin["Trypsin_2MC_%"],
+                    gluc["GluC_0MC_%"],
+                    gluc["GluC_1MC_%"],
+                    gluc["GluC_2MC_%"],
                 ])
 
+                print(f"Processed {name}")
 
-# ==========================================================
-# MAIN
-# ==========================================================
+        print(f"Results written to: {self.output_file}")
+
 
 if __name__ == "__main__":
-    analyzer = ProteinAnalyzer("proteins.fasta","global_results.csv", max_missed_cleavages=2,)
+    analyzer = ProteinAnalyzer(
+        fasta_file="proteins.fasta",
+        output_file="global_results.csv",
+    )
     analyzer.run()
-
