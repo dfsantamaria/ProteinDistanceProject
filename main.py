@@ -51,9 +51,7 @@ class ProteinAnalyzer:
         max_missed_cleavages: int = MAX_MISSED_CLEAVAGES,
     ):
         if max_missed_cleavages < 0:
-            raise ValueError(
-                "max_missed_cleavages must be >= 0."
-            )
+            raise ValueError("Maximum missed cleavages must be >= 0.")
 
         self.fasta_file = fasta_file
         self.output_file = output_file
@@ -89,8 +87,7 @@ class ProteinAnalyzer:
                 else:
                     if name is None:
                         raise ValueError(
-                             "The FASTA file must start with a header line "
-                            "beginning with '>'."
+                             "The FASTA file must start with a header line beginning with '>'."
                         )
 
                     seq.append(line)
@@ -161,9 +158,7 @@ class ProteinAnalyzer:
     ) -> list:
 
         if mc < 0:
-            raise ValueError(
-                "Missed cleavages must be >= 0."
-            )
+            raise ValueError("Missed cleavages must be >= 0.")
 
         result = []
         n = len(peptides)
@@ -187,9 +182,7 @@ class ProteinAnalyzer:
                 current_seq += next_peptide[2]
                 current_end = next_peptide[1]
 
-                result.append(
-                    (start, current_end, current_seq)
-                )
+                result.append((start, current_end, current_seq))
 
         return result
 
@@ -218,7 +211,7 @@ class ProteinAnalyzer:
 
         return round(
             100 * len(covered) / sequence_length,
-            2,
+            2
         )
 
     # ======================================================
@@ -261,6 +254,7 @@ class ProteinAnalyzer:
         fraction = len(valid_lengths) / len(lengths)
 
         return avg, minimum, maximum, fraction
+
     # ======================================================
     # NEAREST-NEIGHBOR DISTANCE
     # ======================================================
@@ -322,7 +316,7 @@ class ProteinAnalyzer:
 
             basic=self.calculate_peptide_statistics(
                 seq, RESIDUE_GROUPS["basic"]
-            ),
+            )
         )
 
     # ======================================================
@@ -385,7 +379,7 @@ class ProteinAnalyzer:
             *[
                 f"GluC_{mc}MC_%"
                 for mc in range(self.max_missed_cleavages + 1)
-            ],
+            ]
         ]
 
         with open(
@@ -452,7 +446,7 @@ class ProteinAnalyzer:
                     *stats.basic,
 
                     *trypsin_coverages,
-                    *gluc_coverages,
+                    *gluc_coverages
                 ])
 
 
@@ -461,10 +455,6 @@ class ProteinAnalyzer:
 # ==========================================================
 
 if __name__ == "__main__":
-    analyzer = ProteinAnalyzer(
-        "proteins.fasta",
-        "global_results.csv",
-        max_missed_cleavages=2,
-    )
+    analyzer = ProteinAnalyzer("proteins.fasta", "global_results.csv",  max_missed_cleavages=2)
 
     analyzer.run()
