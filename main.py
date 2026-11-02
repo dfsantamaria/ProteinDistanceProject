@@ -239,21 +239,25 @@ class ProteinAnalyzer:
         if prev < len(seq):
             lengths.append(len(seq) - prev)
 
+        if not lengths:
+            return (None, None, None, 0.0)
+
+        # Average, minimum and maximum without length restrictions
+        avg = sum(lengths) / len(lengths)
+        minimum = min(lengths)
+        maximum = max(lengths)
+
+        # Fraction restricted to 7-25 amino acids
         valid_lengths = [
             length for length in lengths
             if MIN_STATS_LENGTH <= length <= MAX_STATS_LENGTH
         ]
 
-        if not valid_lengths:
-            return (None, None, None, 0.0)
-
-        avg = sum(valid_lengths) / len(valid_lengths)
-        minimum = min(valid_lengths)
-        maximum = max(valid_lengths)
-
         fraction = len(valid_lengths) / len(lengths)
 
         return avg, minimum, maximum, fraction
+
+
 
     # ======================================================
     # NEAREST-NEIGHBOR DISTANCE
