@@ -225,9 +225,13 @@ class ProteinAnalyzer:
     ) -> tuple:
 
         cuts = [
-            i for i, aa in enumerate(seq)
-            if aa in residues
+            i for i, aa in enumerate(seq[:-1])
+            if aa in residues and seq[i + 1] != "P"
         ]
+
+        # Include the last residue if it belongs to the cleavage group
+        if seq and seq[-1] in residues:
+            cuts.append(len(seq) - 1)
 
         prev = 0
         lengths = []
