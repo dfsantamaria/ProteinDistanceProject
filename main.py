@@ -246,7 +246,7 @@ class ProteinAnalyzer:
         if not lengths:
             return (None, None, None, 0.0)
 
-        # Average, minimum and maximum without length restrictions
+        # Average, minimum and maximum - no length restrictions
         avg = sum(lengths) / len(lengths)
         minimum = min(lengths)
         maximum = max(lengths)
