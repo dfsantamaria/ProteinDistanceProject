@@ -365,27 +365,25 @@ class ProteinAnalyzer:
             "D_count",
             "E_count",
             "%DE",
-            "R_count",
-            "K_count",
-            "%RK",
             "acidic_nearest_neighbor_distance",
-            "basic_nearest_neighbor_distance",
             "acidic_avg",
             "acidic_min",
             "acidic_max",
             "acidic_fraction",
+            *[
+            f"GluC_{mc}MC_%"
+            for mc in range(self.max_missed_cleavages + 1)
+            ],
+            "R_count",
+            "K_count",
+            "%RK",
+            "basic_nearest_neighbor_distance",
             "basic_avg",
             "basic_min",
             "basic_max",
             "basic_fraction",
-
             *[
                 f"Trypsin_{mc}MC_%"
-                for mc in range(self.max_missed_cleavages + 1)
-            ],
-
-            *[
-                f"GluC_{mc}MC_%"
                 for mc in range(self.max_missed_cleavages + 1)
             ]
         ]
@@ -443,18 +441,15 @@ class ProteinAnalyzer:
                     D,
                     E,
                     percent_DE,
+                    stats.acidic_nnd,
+                    *stats.acidic,
+                    *gluc_coverages,
                     R,
                     K,
                     percent_RK,
-
-                    stats.acidic_nnd,
                     stats.basic_nnd,
-
-                    *stats.acidic,
                     *stats.basic,
-
                     *trypsin_coverages,
-                    *gluc_coverages
                 ])
 
 
